@@ -16,27 +16,22 @@ import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
 import torch.nn.functional as F 
-# from torch.autograd.functional import vhp, hessian
-# from torchvision import datasets, transforms
 
 sys.path.append("..")
 
 from torch.optim import SGD
-# from torch.optim.optimizer import Optimizer
-# from fromage import Fromage
+
 from util.nero import Nero
-from util.data import get_data, get_data_k_class #,normalize_data, normalize_data_10_class
-# from util.trainer import SimpleNet, SimpleNetMultiClass, train_network, train_network_multiclass, train_network_multiclass_combined, train_network_multiclass_scale_label
-from util.trainer import generalized_multiclass_train_fullbatch#, train_network_multiclass_scale_label_input_net, generalized_multiclass_train, generalized_multiclass_train_fullbatch
-# from util.hessians import *
+from util.data import get_data, get_data_k_class 
+from util.trainer import generalized_multiclass_train_fullbatch
 from util.scale_init import NetScaleInit
 from matplotlib import cm
-from generalization_bounds import *
+from generalization_bounds import bartlett_spectral_complexity
 
 # Experiment toggle: -------------------------------
-which_experiment = 'controlling init scale'
+# which_experiment = 'controlling init scale'
 # which_experiment = 'controlling margin'
-# which_experiment = 'controlling normalized margin'
+which_experiment = 'controlling normalized margin'
 # --------------------------------------------------
 
 ###### Start Code Blocks for different experiment parameter settings:
@@ -47,15 +42,17 @@ if which_experiment == 'controlling init scale':
     constraints_string = 'False'
     epochs = 250000
     lr_decay = 0.999998
+    lr = 0.0001
 ## End init scale Block
 
 #margin Block:
 if which_experiment == 'controlling margin':
     experiment_flag = 'margin_scale'
     opt_string = 'SGD'
-    constraints_flag = 'False'
+    constraints_string = 'False'
     epochs = 50000
     lr_decay = 0.9998
+    lr = 0.01
 # End Margin Block
 
 
@@ -63,22 +60,15 @@ if which_experiment == 'controlling margin':
 if which_experiment == 'controlling normalized margin':
     experiment_flag = 'margin_scale'
     opt_string = 'Nero'
-    constraints_flag = 'True'
+    constraints_string = 'True'
     epochs = 50000
     lr_decay = 0.9998
+    lr = 0.01
 # End Frob-normalized margin Block
 ###### End Code Blocks for different experiment parameter settings
 
 fname = f"generalization_scale_{experiment_flag}_{opt_string}_{constraints_string}_constraints.pkl"
 
-# specify the types of experiments here
-# experiment_flag = 'init_scale'
-# experiment_flag = 'margin_scale'
-
-# opt_string = 'Nero'
-# opt_string = 'SGD'
-# constraints_string = 'False' # Really only for Nero
-# constraints_string = 'True'
 
 if constraints_string == 'False':
     constraints_flag = False
@@ -88,22 +78,15 @@ elif constraints_string == 'True':
 
 sigma_base = 0.0001
 if experiment_flag == 'margin_scale':
-    # scale_vector = np.logspace(-2, 1, num=15)
     scale_vector = np.logspace(-4, 1, num=25)
-
     param_vector = scale_vector
     sigma_vector = None
-    # sigma_base = 0.001
     sigma = sigma_base
     true_data_label_scale = None
     rand_label_scale = None
 
 elif experiment_flag == 'init_scale':   
-    # sigma_base = 0.001
-    # sigma_base = 0.0001
-    # sigma_vector = sigma_base
     sigma = sigma_base
-    # sigma_vector = [sigma_base * 2**i for i in range(11)]
     sigma_vector = [sigma_base * 2**i for i in range(15)]
 
     true_data_label_scale = 1
@@ -119,7 +102,6 @@ depth = 2
 width = 2048
 k_classes = 10
 num_train_examples = 1000 
-# lr_decay = 1
 # lr_decay = 0.99998
 
 tqdm_flag = False
@@ -131,24 +113,16 @@ if opt_string == 'Nero':
     optimizer_kwargs_to_save = {'lr':lr, 'beta':0.999, 'constraints':constraints_flag}
 elif opt_string == 'SGD':
     cur_opt = SGD
-    optimizer_kwargs = {'lr':lr}#, 'beta':0.999, 'constraints':True}
-    optimizer_kwargs_to_save = {'lr':lr}#, 'beta':0.999, 'constraints':True}
+    optimizer_kwargs = {'lr':lr}
+    optimizer_kwargs_to_save = {'lr':lr}
     if experiment_flag == 'init_scale':
-        lr_vector = [lr  for i in range(len(sigma_vector))]#* 4**i for i in range(len(sigma_vector))]
-# elif opt_string == 'ScaledNero':
-#     cur_opt = ScaledNero
-#     optimizer_kwargs = {'lr':lr, 'beta':0.999, 'constraints':True}
-#     optimizer_kwargs_to_save = {'lr':lr, 'beta':0.999, 'constraints':True}# cur_opt = Nero
+        lr_vector = [lr  for i in range(len(sigma_vector))]
 
 to_spect_norm = False
-# to_train_on_rand = Falsw
 
 criterion = nn.MSELoss()
 early_stop = False
 
-
-# delta = 0.05
-# gamma_array = [10**gamma_mod for gamma_mod in range(0,11,2)]
 params_set = {'num_networks': num_networks,
               'epochs': epochs,
               'lr': lr,
@@ -156,8 +130,6 @@ params_set = {'num_networks': num_networks,
               'width': width,
               'num_train_examples': num_train_examples,
               'lr_decay': lr_decay,
-            #   'bartlett_gamma_array': gamma_array,
-            #   'delta': delta,
               'optimizer': cur_opt,
               'optimizer_kwargs': optimizer_kwargs_to_save,
               'true_data_label_scale': true_data_label_scale,
@@ -197,7 +169,6 @@ rand_data_results = {'train_acc_list': [],
                      }
 
 to_print = []
-# for net in tqdm(range(num_networks)):
 for net, cur_param in enumerate(tqdm(param_vector)):
     if experiment_flag == 'init_scale':
         sigma = cur_param
@@ -236,8 +207,7 @@ for net, cur_param in enumerate(tqdm(param_vector)):
             optimizer_kwargs['lr'] = lr_decay_dict[sigma]['lr']
             lr_decay = lr_decay_dict[sigma]['lr_decay']
             epochs = lr_decay_dict[sigma]['epochs']
-        # optimizer_kwargs['lr'] = lr_vector[net]
-        # print(lr_vector[net])
+
 
     model = NetScaleInit(depth, width, k_classes, sigma)
     train_acc, test_acc, model, init_weights, outputs, correct_class_outputs,\
@@ -257,7 +227,6 @@ for net, cur_param in enumerate(tqdm(param_vector)):
                                         return_margins=True,
                                         early_stop=early_stop,
                                         tqdm_flag = tqdm_flag)
-    # print(f'scale_init: {sigma}, lr: {optimizer_kwargs["lr"]}, train acc: {train_acc[-1]}')
     to_print.append(f'scale_init: {sigma}, lr: {optimizer_kwargs["lr"]}, train acc: {train_acc[-1]}')
 
     rand_full_batch_train_loader, rand_train_loader, rand_test_loader = get_data_k_class(
@@ -346,8 +315,6 @@ for print_str in to_print:
     print(print_str)
 
 
-# f = open("generalization_extreme_memorization_margin_scale.pkl", "wb")
-# f = open(f"lr_specific_faster_longer_generalization_extreme_memorization_{experiment_flag}_{opt_string}_{constraints_string}_constraints_{epochs}_epochs_{lr_decay}_lrdecay_{depth}_depth.pkl", "wb")
 f = open(fname, "wb")
 pickle.dump(final_vals_dict, f)
 f.close()

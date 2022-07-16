@@ -22,14 +22,10 @@ from torchvision import datasets, transforms
 sys.path.append("..")
 
 from torch.optim import SGD
-# from torch.optim.optimizer import Optimizer
-# from fromage import Fromage
 from util.nero import Nero
-from util.data import get_data_attack_set#, get_data, normalize_data, normalize_data_10_class, get_data_k_class, get_data_augmented_k_classes
-from util.trainer import SimpleNetMultiClass, generalized_multiclass_train_fullbatch#, SimpleNet, train_network, train_network_multiclass, train_network_multiclass_combined, train_network_multiclass_scale_label
-# from util.trainer import generalized_multiclass_train_fullbatch#, train_network_multiclass_scale_label_input_net, generalized_multiclass_train
-# from util.hessians import *
-# from util.scale_init import NetScaleInit
+from util.data import get_data_attack_set
+from util.trainer import SimpleNetMultiClass, generalized_multiclass_train_fullbatch
+
 from matplotlib import cm
 from generalization_bounds import bartlett_spectral_complexity
 
@@ -41,14 +37,6 @@ constraints_string = 'True'
 ###
 
 
-# specify the types of experiments below:
-# experiment_flag = 'margin_scale'
-
-# opt_string = 'Nero'
-# opt_string = 'SGD'
-# constraints_string = 'False' # Really only for Nero
-# constraints_string = 'False'
-# constraints_string = 'True'
 
 if constraints_string == 'False':
     constraints_flag = False
@@ -58,8 +46,6 @@ elif constraints_string == 'True':
 
 if experiment_flag == 'margin_scale':
     param_size = 6
-    # param_size = 2
-    # scale_vector = np.logspace(-2, 1, num=param_size)
     scale_vector = np.logspace(-1, 1, num=param_size)
     param_vector = scale_vector
     sigma_vector = None
@@ -67,16 +53,6 @@ if experiment_flag == 'margin_scale':
     sigma = sigma_base
     true_data_label_scale = None
     rand_label_scale = None
-
-# elif experiment_flag == 'init_scale':
-#     sigma_base = 0.001
-#     # sigma_vector = sigma_base
-#     sigma = sigma_base
-#     sigma_vector = [sigma_base * 2**i for i in range(11)]
-#     true_data_label_scale = 1
-#     rand_label_scale = 1    
-#     param_vector = sigma_vector
-#     scale_vector = [1]
 
 num_networks = len(param_vector)
 
@@ -88,9 +64,8 @@ width = 2048
 k_classes = 10
 num_train_examples = 500 
 num_test_examples = 10000
-num_attack_examples = 2000
-# lr_decay = 1
-lr_decay = 0.99997
+num_attack_examples = 1500
+lr_decay = 0.9999
 tqdm_flag = False
 
 if opt_string == 'Nero':
@@ -99,8 +74,8 @@ if opt_string == 'Nero':
     optimizer_kwargs_to_save = {'lr':lr, 'beta':0.999, 'constraints':constraints_flag}
 elif opt_string == 'SGD':
     cur_opt = SGD
-    optimizer_kwargs = {'lr':lr}#, 'beta':0.999, 'constraints':True}
-    optimizer_kwargs_to_save = {'lr':lr}#, 'beta':0.999, 'constraints':True}
+    optimizer_kwargs = {'lr':lr}
+    optimizer_kwargs_to_save = {'lr':lr}
 
 
 to_spect_norm = False
@@ -152,7 +127,6 @@ control_data_results = {'train_acc_list': [],
                      'sigma': []
                      }
 
-# for net in tqdm(range(num_networks)):
 for net, cur_param in enumerate(tqdm(param_vector)):
     if experiment_flag == 'init_scale':
         sigma = cur_param
@@ -162,13 +136,6 @@ for net, cur_param in enumerate(tqdm(param_vector)):
 
     true_data_label_scale = cur_scale
     control_data_label_scale = cur_scale
-
-    # full_batch_train_loader, full_batch_test_loader, train_loader, test_loader, full_batch_control_train_loader, control_train_loader= get_data_augmented_k_classes(
-    #     num_train_examples=num_train_examples,
-    #     num_test_examples=num_test_examples, 
-    #     batch_size=500,
-    #     k_classes=k_classes,
-    #     control=True)
 
     full_batch_train_loader_attack, full_batch_test_loader, train_loader, test_loader, full_batch_control_train_loader, control_train_loader = get_data_attack_set(
         num_train_examples=num_train_examples, 
@@ -183,7 +150,6 @@ for net, cur_param in enumerate(tqdm(param_vector)):
 
 
 
-    # model = NetScaleInit(depth, width, k_classes, sigma)
     model = SimpleNetMultiClass(depth, width, k_classes)
     train_acc, test_acc, model, init_weights, outputs, correct_class_outputs,\
     other_class_outputs, X_norm, targets = \
@@ -205,7 +171,6 @@ for net, cur_param in enumerate(tqdm(param_vector)):
 
 
     # Now the NN trained without the distorted data
-    # control_model = NetScaleInit(depth, width, k_classes, sigma)
     control_model = SimpleNetMultiClass(depth, width, k_classes)
 
     control_train_acc, control_test_acc, control_model, control_init_weights, control_outputs, control_correct_class_outputs,\
@@ -233,19 +198,15 @@ for net, cur_param in enumerate(tqdm(param_vector)):
     spectral_norm_control = []
     model.cpu()
     control_model.cpu()
-    for idx, params in enumerate(zip(model.parameters(), control_model.parameters())):#, rand_model.parameters())):
+    for idx, params in enumerate(zip(model.parameters(), control_model.parameters())):
 
         p, p_control = params
-        # p = params
         p = p.detach()
         p_control = p_control.detach()
         fro_norm.append(np.linalg.norm(p, ord='fro'))
         fro_norm_control.append(np.linalg.norm(p_control, ord='fro'))
-        # fro_norm_rand.append(np.linalg.norm(p_rand, ord='fro'))
-
         spectral_norm.append(np.linalg.norm(p, ord=2))
         spectral_norm_control.append(np.linalg.norm(p_control, ord=2))
-        # spectral_norm_rand.append(np.linalg.norm(p_rand, ord=2))
 
     spect_complex = bartlett_spectral_complexity(model, ref_M=init_weights)
     control_spect_complex = bartlett_spectral_complexity(control_model, ref_M = control_init_weights)
@@ -277,13 +238,11 @@ for net, cur_param in enumerate(tqdm(param_vector)):
 
 final_vals_dict = {'true_data_results': true_data_results,
                    'control_data_results': control_data_results
-}#,
-                #    'rand_data_results': rand_data_results}
+                   }
 
 final_vals_dict['parameters'] = params_set
 
 
-# f = open("generalization_extreme_memorization_margin_scale.pkl", "wb")
 f = open(f"attack_set_with_control_dif_epochs_{opt_string}_{constraints_string}_constraints_{epochs}_epochs_{lr_decay}_lrdecay_{depth}_depth.pkl", "wb")
 pickle.dump(final_vals_dict, f)
 f.close()
